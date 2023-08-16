@@ -21,23 +21,12 @@ class MyArray:
             out = MyArray(self.data + other.data, _children=(self, other), requires_grad=(self.requires_grad or other.requires_grad))
             if(self.requires_grad == True or other.requires_grad == True):
                 out.requires_grad = True
-                # if(self.requires_grad == True and other.requires_grad == True):
-                #     def _backward():
-                #         self.grad += 1.0 * out.grad
-                #         other.grad += 1.0 * out.grad
-                #     out._backward = _backward
-                # else:
-                #     rg = self if (self.requires_grad==True) else other
-                #     def _backward():
-                #         rg.grad += 1.0 * out.grad
-                #     out._backward = _backward
                 def _backward():
                     if self.requires_grad == True:
                         self.grad += 1.0 * out.grad
                     if other.requires_grad == True:
                         other.grad += 1.0 * out.grad
                 out._backward = _backward
-                
         else:
             out = MyArray(self.data + other, requires_grad=(self.requires_grad))
             if(self.requires_grad == True):
@@ -51,32 +40,13 @@ class MyArray:
 
         # if other is a MyArray
         if isinstance(other, MyArray):
-            if(self.data.shape == other.data.shape):
-                out = MyArray(self.data * other.data, _children=(self, other), requires_grad=(self.requires_grad or other.requires_grad))
-                
-                if(self.requires_grad == True or other.requires_grad == True):
-                    if(self.requires_grad == True and other.requires_grad == True):
-                        def _backward():
-                            self.grad += MyArray(other.data * out.grad.data)
-                            other.grad += MyArray(self.data * out.grad.data)
-                        out._backward = _backward
-                    else:
-                        rg = self if (self.requires_grad==True) else other
-                        def _backward():
-                            rg.grad += other.data * out.grad.data
-                        out._backward = _backward
-            
-            elif(self.data.shape[1] == other.data.shape[0]):
-                
+            if(self.data.shape[1] == other.data.shape[0]):
                 out = MyArray(np.matmul(self.data, other.data), _children=(self, other), requires_grad=(self.requires_grad or other.requires_grad))
-                print(self.shape, other.shape, out.shape)
                 if(self.requires_grad == True or other.requires_grad == True):
                     if(self.requires_grad == True and other.requires_grad == True):
                         def _backward():
-                            s1 = np.sum(other.data, axis=1).transpose()
-                            s2 = np.sum(self.data, axis=0)
-                            s2.shape = (s2.shape[0], 1)
-                            self.grad.data += s1 * out.grad.data
+                            temp = other.data @ out.grad.data.transpose()
+                            self.grad.data += temp.transpose()
                             other.grad.data += self.data.transpose() @ out.grad.data
                         out._backward = _backward
                     else: 
@@ -88,6 +58,8 @@ class MyArray:
                                 s.shape = (s.shape[0], 1)
                                 other.grad.data += s * out.grad.data
                         out._backward = _backward
+                    # def _backward():
+                    #     pass
                 
 
         # if other is not a MyArray (i.e an int or a float)
@@ -125,6 +97,9 @@ class MyArray:
     def __rsub__(self, other): # other - self
         return other + (-self)
 
+    def transpose(self):
+        return MyArray(self.grad.data.transpose())
+
     def backward(self):
 
         # topological order all of the children in the graph
@@ -138,7 +113,7 @@ class MyArray:
                 topo.append(v)
         build_topo(self)
         # go one variable at a time and apply the chain rule to get its gradient
-        self.grad = MyArray([1])
+        self.grad = ones(self.shape)
         # self.grad = ones(self.grad.shape)
         for v in reversed(topo):
             v._backward()
