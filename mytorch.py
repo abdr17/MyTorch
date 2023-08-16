@@ -43,27 +43,14 @@ class MyArray:
             if(self.data.shape[1] == other.data.shape[0]):
                 out = MyArray(np.matmul(self.data, other.data), _children=(self, other), requires_grad=(self.requires_grad or other.requires_grad))
                 if(self.requires_grad == True or other.requires_grad == True):
-                    if(self.requires_grad == True and other.requires_grad == True):
-                        def _backward():
+                    def _backward():
+                        if self.requires_grad == True:
                             temp = other.data @ out.grad.data.transpose()
                             self.grad.data += temp.transpose()
+                        if other.requires_grad ==True:
                             other.grad.data += self.data.transpose() @ out.grad.data
-                        out._backward = _backward
-                    else: 
-                        def _backward():
-                            if self.requires_grad==True:
-                                self.grad.data += np.sum(other.data, axis=1)
-                            else:
-                                s = np.sum(self.data, axis=0)
-                                s.shape = (s.shape[0], 1)
-                                other.grad.data += s * out.grad.data
-                        out._backward = _backward
-                    # def _backward():
-                    #     pass
-                
-
+                    out._backward = _backward
         # if other is not a MyArray (i.e an int or a float)
-
         else:
             out = MyArray(self.data * other, requires_grad=(self.requires_grad))
             if(self.requires_grad == True):
