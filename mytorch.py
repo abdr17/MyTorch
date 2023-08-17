@@ -1,4 +1,5 @@
-# Implementation of autograd using pytorch
+# Implementation of autograd and linear, ReLU and sigmoid layers (very similar to pytorch)
+from typing import Any
 import numpy as np
 
 class MyArray:
@@ -17,7 +18,11 @@ class MyArray:
             self.grad = MyArray(np.zeros(self.data.shape))
         self.shape = self.data.shape
 
-    
+    def __getitem__(self, index):
+        out = MyArray(np.array(self.data[index]), requires_grad=self.requires_grad)
+        return out
+
+
     def __add__(self, other):
         if isinstance(other, MyArray):
             out = MyArray(self.data + other.data, _children=(self, other), requires_grad=(self.requires_grad or other.requires_grad))
@@ -107,8 +112,17 @@ class MyArray:
             out._backward = _backward
         return out
     
-    def sum(self):
-        return np.sum(self.data)
+    def sum(self, axis=0):
+        out = MyArray(np.sum(self.data, axis=axis), requires_grad=self.requires_grad, _children=(self,))
+        def _backward():
+            try:
+                self.grad += 1.0 * out.grad
+            except:
+                out.grad.data.shape = (out.grad.data.shape[0], 1)
+                self.grad += 1.0 * out.grad
+                out.grad.data.shape = (out.grad.data.shape[0], )
+        out._backward = _backward
+        return out
     
     def zero_grad(self):
         temp = MyArray(np.zeros(self.shape), requires_grad=True)
@@ -116,7 +130,7 @@ class MyArray:
 
     def backward(self):
 
-        # topological order all of the children in the graph
+        # topologicalout.grad order all of the children in the graph
         topo = []
         visited = set()
         def build_topo(v):
@@ -138,9 +152,18 @@ class MyArray:
     def __rtruediv__(self, other): # other / self
         return other * self**-1
 
+    def mean(self):
+        out = MyArray([np.mean(self.data)], requires_grad=self.requires_grad, _children=(self,))
+        def _backward():
+            self.grad += 1/self.data.size * out.grad.data
+        out._backward = _backward
+        return out
 
     def log(self):
         return MyArray(np.log(self.data))
+    
+    def argmax(self, axis=1):
+        out = MyArray(np.argmax(self.data, axis=axis))
     
     def __repr__(self) -> str:
         return f' \nMyArray({self.data})' if (self.requires_grad == False) else f'MyArray({self.data}, requires_grad=true)'
@@ -155,11 +178,12 @@ def ones(shape, requires_grad=False):
 
 
 def exp(tensor : MyArray):
-    out = MyArray(np.exp(tensor.data))
+    out = MyArray(np.exp(tensor.data), requires_grad=tensor.requires_grad, _children=(tensor,))
     if(tensor.requires_grad == True):
-        out.requires_grad = True
         def _backward():
-            tensor.grad = tensor.data* out.grad
+            tensor.grad = tensor.element_wise_mul(out.grad)
+        out._backward = _backward
+    return out
 
 class nn:
     def __init__(self):
@@ -181,7 +205,7 @@ class LinearLayer:
 
     def __call__(self, x : MyArray):
         out = x * self.w
-        out._prev = (x, self.w) #veryyyyyyy important
+        out._prev = (x, self.w)    # Check if the code works without this line
         return out
 
     
@@ -211,12 +235,61 @@ def Sigmoid(x):
 
 class SigmoidLayer:
     def __init__(self):
-        pass
+        global sig
     
     def __call__(self, x : MyArray):
-        sig = MyArray(sigmoid_function(x), requires_grad=x.requires_grad)
+        self.sig = MyArray(sigmoid_function(x), requires_grad=x.requires_grad, _children=(x,))
         if x.requires_grad == True:
             def _backward():
                 x.grad += sig.element_wise_mul(1 - sig)
-            sig._backward = _backward
-        return sig
+            self.sig._backward = _backward
+        return self.sig
+    
+class MSELoss:
+    def __init__(self):
+        global out
+
+    def __call__(self, arr_1 : MyArray, arr_2 : MyArray):
+        out = ((arr_1-arr_2).square().mean())
+        return out
+    
+class CrossEntropyLoss:
+    def __init__(self):
+        global out
+    
+    def __call__(self, pred : MyArray, des : MyArray):
+        l = np.zeros((pred.shape[0], 1))
+        for row in range(pred.shape[0]):
+            l[row] = np.round(-1 * np.log( np.exp(pred.data[row][des.data[row]]) / np.sum(np.exp(pred.data[row])) ), 4)
+        out = MyArray(l, requires_grad=pred.requires_grad, _children=(pred, des))
+        def backward():
+            grad = np.zeros(pred.shape)
+            for row in range(pred.shape[0]):
+                for col in range(pred.shape[1]):
+                    if col == des[row]:
+                        grad[row][col] = ((np.exp(pred.data[row][col])/np.sum(np.exp(pred.data[row][:]))))/pred.shape[0] + 1
+                    else:
+                        grad[row][col] = (np.exp(pred.data[row][col]) / np.sum(np.exp(pred.data[row][:])))/pred.shape[0]
+
+            pred.grad = MyArray(grad)
+        out._backward = backward
+        return out.mean()
+        # return (l)
+    
+def CrossEntropy(pred, des):
+        l = np.zeros((pred.shape[0], 1))
+        for row in range(pred.shape[0]):
+            l[row] = np.round(-1 * np.log( np.exp(pred[row][des[row]]) / np.sum(np.exp(pred[row])) ), 4)
+        # def backward():
+        #     grad = np.zeros(pred.shape)
+        #     for row in range(pred.shape[0]):
+        #         for col in range(pred.shape[1]):
+        #             if col == des[row]:
+        #                 grad[row][col] = ((np.exp(pred[row][col])/np.sum(np.exp(pred[row][:]))) - 1)/pred.shape[0]
+        #             else:
+        #                 grad[row][col] = (np.exp(pred[row][col]) / np.sum(np.exp(pred[row][:])))/pred.shape[0]
+        #     return np.round(grad, 4)
+        # self._backward = backward
+        # return (np.round(np.mean(l), 4))
+        return (l)
+            
